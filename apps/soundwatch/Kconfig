@@ -1,0 +1,74 @@
+#
+# apps/soundwatch/Kconfig
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.  The
+# ASF licenses this file to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance with the
+# License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+config APP_SOUNDWATCH
+	bool "SoundWatch - Environmental Sound Awareness"
+	default n
+	
+	
+	
+	---help---
+		SoundWatch is an environmental sound awareness application for
+		the hearing impaired and users who need to focus on work. It
+		identifies critical environmental sounds such as fire alarms,
+		car horns, doorbells, and human calls, and provides timely
+		alerts through vibration and screen information.
+
+if APP_SOUNDWATCH
+
+config APP_SOUNDWATCH_STACKSIZE
+	int "SoundWatch stack size"
+	default 4096
+	---help---
+		The stack size for the SoundWatch main task.
+
+config APP_SOUNDWATCH_PRIORITY
+	int "SoundWatch task priority"
+	default 100
+	---help---
+		The priority of the SoundWatch main task.
+
+config SOUNDWATCH_CONFIDENCE_THRESHOLD
+	int "Confidence threshold (0-100)"
+	default 70
+	range 0 100
+	---help---
+		The minimum confidence level required to trigger an alert.
+		Lower values will trigger more alerts but may include false positives.
+
+config SOUNDWATCH_COOLDOWN_MS
+	int "Cooldown time (milliseconds)"
+	default 5000
+	---help---
+		The minimum time between alerts for the same sound type.
+
+config SOUNDWATCH_CONFIRM_FRAMES
+	int "Confirmation frames"
+	default 3
+	---help---
+		The number of consecutive frames that must detect the same sound
+		before triggering an alert.
+
+config SOUNDWATCH_MAX_EVENTS
+	int "Maximum stored events"
+	default 100
+	---help---
+		The maximum number of events to store in the event log.
+
+endif # APP_SOUNDWATCH
