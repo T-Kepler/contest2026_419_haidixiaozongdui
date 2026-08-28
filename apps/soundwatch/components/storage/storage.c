@@ -40,7 +40,7 @@
  ****************************************************************************/
 
 #define STORAGE_FILE_PATH      "/var/soundwatch/events.dat"
-#define STORAGE_MAX_EVENTS     CONFIG_SOUNDWATCH_MAX_EVENTS
+#define STORAGE_MAX_EVENTS     SOUNDWATCH_MAX_EVENTS
 #define STORAGE_MAGIC          0x53574556  /* "SWEV" */
 
 /****************************************************************************
@@ -286,6 +286,10 @@ int storage_init(storage_handle_t *handle)
 
   memset(ctx, 0, sizeof(struct storage_ctx_s));
 
+  /* Initialize file descriptor to invalid */
+
+  ctx->fd = -1;
+
   /* Create directory if it doesn't exist */
 
   ret = mkdir("/var/soundwatch", 0755);
@@ -325,7 +329,10 @@ int storage_init(storage_handle_t *handle)
   return 0;
 
 err_create:
-  close(ctx->fd);
+  if (ctx->fd >= 0)
+    {
+      close(ctx->fd);
+    }
 err_open:
 err_mkdir:
   free(ctx);

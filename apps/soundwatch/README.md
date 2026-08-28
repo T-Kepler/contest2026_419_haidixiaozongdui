@@ -47,7 +47,7 @@
 
 ### 总体架构
 
-`	ext
+```text
 PDM/I2S 麦克风
        │
        ▼
@@ -62,11 +62,11 @@ PDM/I2S 麦克风
                                     ├─ 屏幕提醒(LVGL)
                                     ├─ 蓝牙同步(BLE GATT)
                                     └─ 本地存储(Flash/KV)
-`
+```
 
 ### 代码结构
 
-`	ext
+```text
 apps/soundwatch/
 ├── CMakeLists.txt              # CMake 构建配置
 ├── Kconfig                     # 内核配置
@@ -89,7 +89,7 @@ apps/soundwatch/
     │   └── storage.c           # 事件存储模块
     └── bluetooth/
         └── bluetooth.c         # 蓝牙配置模块
-`
+```
 
 ## 编译环境
 
@@ -111,7 +111,7 @@ apps/soundwatch/
 
 ### 编译命令
 
-`ash
+```bash
 # 设置 PATH
 export PATH=/home/t/openvela/prebuilts/tools/linux/x86_64:/home/t/openvela/prebuilts/gcc/linux-x86_64/arm-none-eabi/bin:/home/t/.local/bin:/usr/bin:/bin:
 
@@ -121,16 +121,16 @@ cmake -B cmake_out/sf32lb52_devkit_lcd -S nuttx -GNinja -DBOARD_CONFIG=../vendor
 
 # 编译
 ninja -C cmake_out/sf32lb52_devkit_lcd
-`
+```
 
 ## 烧录命令
 
-`ash
+```bash
 # 烧录到开发板
 sftool -c SF32LB52 -p /dev/ttyUSB0 -b 1000000 \
        --before default_reset --after soft_reset \
        write_flash /home/t/openvela/cmake_out/sf32lb52_devkit_lcd/nuttx.bin@0x12010000
-`
+```
 
 ## 编译结果
 
@@ -138,28 +138,25 @@ sftool -c SF32LB52 -p /dev/ttyUSB0 -b 1000000 \
 
 | 文件 | 大小 | 说明 |
 |------|------|------|
-| 
-uttx.bin | 1.56 MB | 可烧录固件 |
-| 
-uttx | 13.45 MB | ELF 文件 |
-| 
-uttx.map | 13.62 MB | 内存映射文件 |
+| nuttx.bin | 1.56 MB | 可烧录固件 |
+| nuttx | 13.45 MB | ELF 文件 |
+| nuttx.map | 13.62 MB | 内存映射文件 |
 
 ### 内存使用
 
-`
+```text
 Memory region         Used Size  Region Size  %age Used
            flash:     1563100 B        16 MB      9.32%
             sram:      121660 B       512 KB     23.20%
            psram:           0 B         8 MB      0.00%
-`
+```
 
 ## 待完善项
 
 ### 高优先级
 
 1. **真实音频采集** - 当前使用模拟实现，需连接麦克风
-2. **声音识别模型** - 当前使用随机权重，需训练预训练模型
+2. **声音识别模型** - 当前使用预设权重，需训练真实模型
 3. **BLE 蓝牙通信** - 当前为框架代码，需实现实际通信
 
 ### 中优先级

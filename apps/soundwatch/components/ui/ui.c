@@ -452,6 +452,29 @@ void ui_deinit(ui_handle_t handle)
       lv_timer_del(ctx->refresh_timer);
     }
 
+  /* Delete UI objects */
+
+  if (ctx->event_log != NULL)
+    {
+      lv_obj_del(ctx->event_log);
+    }
+
+  if (ctx->alert_panel != NULL)
+    {
+      lv_obj_del(ctx->alert_panel);
+    }
+
+  if (ctx->status_bar != NULL)
+    {
+      lv_obj_del(ctx->status_bar);
+    }
+
+  /* Delete styles */
+
+  lv_style_reset(&ctx->style_alert);
+  lv_style_reset(&ctx->style_text);
+  lv_style_reset(&ctx->style_bg);
+
   /* Deinitialize LVGL */
 
   lv_deinit();
@@ -514,14 +537,14 @@ int ui_show_alert(ui_handle_t handle, const sound_event_t *event)
   ctx->alert_visible = true;
   ctx->alert_start_time = lv_tick_get();
 
-  /* Add to event log */
+  /* Add to event log (ring buffer with overwrite) */
 
+  ctx->event_log_buffer[ctx->event_log_index].event = *event;
+  ctx->event_log_buffer[ctx->event_log_index].display_time =
+    lv_tick_get();
+  ctx->event_log_index = (ctx->event_log_index + 1) % UI_EVENT_LOG_MAX;
   if (ctx->event_log_count < UI_EVENT_LOG_MAX)
     {
-      ctx->event_log_buffer[ctx->event_log_index].event = *event;
-      ctx->event_log_buffer[ctx->event_log_index].display_time =
-        lv_tick_get();
-      ctx->event_log_index = (ctx->event_log_index + 1) % UI_EVENT_LOG_MAX;
       ctx->event_log_count++;
     }
 

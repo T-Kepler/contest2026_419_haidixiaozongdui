@@ -37,8 +37,18 @@
  ****************************************************************************/
 
 #define SOUNDWATCH_TASK_NAME     "soundwatch"
-#define SOUNDWATCH_STACK_SIZE    4096
-#define SOUNDWATCH_PRIORITY      100
+
+#ifdef CONFIG_APP_SOUNDWATCH_STACKSIZE
+#  define SOUNDWATCH_STACK_SIZE    CONFIG_APP_SOUNDWATCH_STACKSIZE
+#else
+#  define SOUNDWATCH_STACK_SIZE    4096
+#endif
+
+#ifdef CONFIG_APP_SOUNDWATCH_PRIORITY
+#  define SOUNDWATCH_PRIORITY      CONFIG_APP_SOUNDWATCH_PRIORITY
+#else
+#  define SOUNDWATCH_PRIORITY      100
+#endif
 
 /****************************************************************************
  * Private Types
@@ -250,7 +260,7 @@ static int soundwatch_process_event(struct soundwatch_ctx_s *ctx,
 
   /* Check confidence threshold */
 
-  if (event->confidence < CONFIG_SOUNDWATCH_CONFIDENCE_THRESHOLD)
+  if (event->confidence < SOUNDWATCH_CONFIDENCE_THRESHOLD)
     {
       syslog(LOG_INFO, "SoundWatch: Low confidence, showing unknown\n");
       ui_show_unknown(ctx->ui, event);
@@ -417,6 +427,7 @@ static int soundwatch_task(int argc, char *argv[])
 int main(int argc, char *argv[])
 {
   int ret;
+  int status;
 
   syslog(LOG_INFO, "SoundWatch: Starting...\n");
 
@@ -432,6 +443,12 @@ int main(int argc, char *argv[])
       syslog(LOG_ERR, "SoundWatch: Task create failed: %d\n", errno);
       return EXIT_FAILURE;
     }
+
+  /* Wait for the task to complete */
+
+  waitpid(ret, &status, 0);
+
+  syslog(LOG_INFO, "SoundWatch: Task exited with status %d\n", status);
 
   return EXIT_SUCCESS;
 }

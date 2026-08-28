@@ -32,7 +32,7 @@
 #include <syslog.h>
 #include <sys/ioctl.h>
 #include <math.h>
-#include <math.h>
+#include <time.h>
 
 #include "soundwatch.h"
 
@@ -243,7 +243,12 @@ int audio_read(audio_handle_t handle, audio_frame_t *frame, size_t size)
   /* Set frame metadata */
 
   frame->size = AUDIO_FRAME_SIZE * sizeof(int16_t);
-  frame->timestamp = (uint32_t)time(NULL);
+
+  /* Use monotonic clock for precise timing (milliseconds) */
+
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  frame->timestamp = (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 
   /* Simulate some delay */
 
