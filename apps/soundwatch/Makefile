@@ -29,8 +29,9 @@ MODULE    = $(CONFIG_APP_SOUNDWATCH)
 
 # SoundWatch source files
 
-CSRCS = src/main.c \
-        components/audio/audio.c \
+MAINSRC = src/main.c
+
+CSRCS = components/audio/audio.c \
         components/recognition/recognition.c \
         components/vibration/vibration.c \
         components/ui/ui.c \

@@ -174,6 +174,8 @@ void ui_deinit(ui_handle_t handle);
 int ui_show_alert(ui_handle_t handle, const sound_event_t *event);
 int ui_show_unknown(ui_handle_t handle, const sound_event_t *event);
 int ui_update_status(ui_handle_t handle, const char *status);
+int ui_load_history(ui_handle_t handle, const sound_event_t *events,
+                    int count);
 
 /****************************************************************************
  * Public Function Prototypes - Storage Module

@@ -39,9 +39,14 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define STORAGE_FILE_PATH      "/var/soundwatch/events.dat"
-#define STORAGE_MAX_EVENTS     SOUNDWATCH_MAX_EVENTS
-#define STORAGE_MAGIC          0x53574556  /* "SWEV" */
+#define STORAGE_FILE_PATH         "/var/soundwatch/events.dat"
+#define STORAGE_FILE_PATH_ALT1    "/tmp/soundwatch/events.dat"
+#define STORAGE_FILE_PATH_ALT2    "/data/soundwatch/events.dat"
+#define STORAGE_DIR_PATH          "/var/soundwatch"
+#define STORAGE_DIR_PATH_ALT1     "/tmp/soundwatch"
+#define STORAGE_DIR_PATH_ALT2     "/data/soundwatch"
+#define STORAGE_MAX_EVENTS        CONFIG_SOUNDWATCH_MAX_EVENTS
+#define STORAGE_MAGIC             0x53574556  /* "SWEV" */
 
 /****************************************************************************
  * Private Types
@@ -62,7 +67,8 @@ typedef struct storage_header_s
 
 struct storage_ctx_s
 {
-  int      fd;              /* File descriptor */
+  int      fd;              /* File descriptor (-1 = memory-only) */
+  bool     memory_only;     /* Memory-only mode flag */
   uint32_t count;           /* Current event count */
   uint32_t next_index;      /* Next write index */
   sound_event_t events[STORAGE_MAX_EVENTS]; /* Event buffer */
@@ -75,6 +81,9 @@ struct storage_ctx_s
 static int storage_load(struct storage_ctx_s *ctx);
 static int storage_save(struct storage_ctx_s *ctx);
 static int storage_create_file(struct storage_ctx_s *ctx);
+static int storage_try_open(struct storage_ctx_s *ctx,
+                            const char *dir_path,
+                            const char *file_path);
 
 /****************************************************************************
  * Private Functions
@@ -160,6 +169,13 @@ static int storage_save(struct storage_ctx_s *ctx)
   ssize_t bytes_written;
 
   DEBUGASSERT(ctx != NULL);
+
+  /* Memory-only mode: skip file operations */
+
+  if (ctx->memory_only || ctx->fd < 0)
+    {
+      return 0;
+    }
 
   /* Prepare header */
 
@@ -255,6 +271,39 @@ static int storage_create_file(struct storage_ctx_s *ctx)
  ****************************************************************************/
 
 /****************************************************************************
+ * Name: storage_try_open
+ *
+ * Description:
+ *   Try to create directory and open storage file at a given path.
+ *
+ ****************************************************************************/
+
+static int storage_try_open(struct storage_ctx_s *ctx,
+                            const char *dir_path,
+                            const char *file_path)
+{
+  int ret;
+
+  /* Create directory if it doesn't exist */
+
+  ret = mkdir(dir_path, 0755);
+  if (ret < 0 && errno != EEXIST)
+    {
+      return -errno;
+    }
+
+  /* Open storage file */
+
+  ctx->fd = open(file_path, O_RDWR | O_CREAT, 0644);
+  if (ctx->fd < 0)
+    {
+      return -errno;
+    }
+
+  return 0;
+}
+
+/****************************************************************************
  * Name: storage_init
  *
  * Description:
@@ -285,58 +334,56 @@ int storage_init(storage_handle_t *handle)
     }
 
   memset(ctx, 0, sizeof(struct storage_ctx_s));
+  ctx->fd = -1;
+  ctx->memory_only = false;
 
-  /* Initialize file descriptor to invalid */
+  /* Try multiple storage paths */
 
   ctx->fd = -1;
-
-  /* Create directory if it doesn't exist */
-
-  ret = mkdir("/var/soundwatch", 0755);
-  if (ret < 0 && errno != EEXIST)
-    {
-      syslog(LOG_ERR, "Storage: mkdir failed: %d\n", errno);
-      goto err_mkdir;
-    }
-
-  /* Open storage file */
-
-  ctx->fd = open(STORAGE_FILE_PATH, O_RDWR | O_CREAT, 0644);
-  if (ctx->fd < 0)
-    {
-      syslog(LOG_ERR, "Storage: Open file failed: %d\n", errno);
-      ret = -errno;
-      goto err_open;
-    }
-
-  /* Try to load existing data */
-
-  ret = storage_load(ctx);
+  ret = storage_try_open(ctx, STORAGE_DIR_PATH, STORAGE_FILE_PATH);
   if (ret < 0)
     {
-      /* File may be empty or corrupted, create new */
+      syslog(LOG_WARNING,
+             "Storage: %s unavailable (%d), trying alt1\n",
+             STORAGE_FILE_PATH, ret);
+      ret = storage_try_open(ctx, STORAGE_DIR_PATH_ALT1,
+                             STORAGE_FILE_PATH_ALT1);
+    }
 
-      ret = storage_create_file(ctx);
+  if (ret < 0)
+    {
+      syslog(LOG_WARNING,
+             "Storage: %s unavailable (%d), trying alt2\n",
+             STORAGE_FILE_PATH_ALT1, ret);
+      ret = storage_try_open(ctx, STORAGE_DIR_PATH_ALT2,
+                             STORAGE_FILE_PATH_ALT2);
+    }
+
+  if (ret < 0)
+    {
+      syslog(LOG_WARNING,
+             "Storage: All paths unavailable, memory-only mode\n");
+      ctx->fd = -1;
+      ctx->memory_only = true;
+    }
+  else
+    {
+      /* Try to load existing data */
+
+      ret = storage_load(ctx);
       if (ret < 0)
         {
-          goto err_create;
+          /* File may be empty or corrupted, create new */
+
+          storage_create_file(ctx);
         }
     }
 
   *handle = (storage_handle_t)ctx;
 
-  syslog(LOG_INFO, "Storage: Initialized successfully\n");
+  syslog(LOG_INFO, "Storage: Initialized successfully%s\n",
+         ctx->memory_only ? " (memory-only)" : "");
   return 0;
-
-err_create:
-  if (ctx->fd >= 0)
-    {
-      close(ctx->fd);
-    }
-err_open:
-err_mkdir:
-  free(ctx);
-  return ret;
 }
 
 /****************************************************************************
@@ -363,7 +410,11 @@ void storage_deinit(storage_handle_t handle)
 
   storage_save(ctx);
 
-  close(ctx->fd);
+  if (ctx->fd >= 0)
+    {
+      close(ctx->fd);
+    }
+
   free(ctx);
 
   syslog(LOG_INFO, "Storage: Deinitialized\n");

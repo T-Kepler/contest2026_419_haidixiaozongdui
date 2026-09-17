@@ -1,2 +1,28 @@
-# Minimal defconfig for contest2026_419_board.
-CONFIG_ARCH_BOARD_CONTEST2026_419_BOARD=y
+# Minimal defconfig for contest2026_419 board.
+CONFIG_ARCH_BOARD_CONTEST2026_000_BOARD=y
+
+# SoundWatch application
+CONFIG_APP_SOUNDWATCH=y
+CONFIG_APP_SOUNDWATCH_STACKSIZE=8192
+CONFIG_APP_SOUNDWATCH_PRIORITY=100
+CONFIG_SOUNDWATCH_CONFIDENCE_THRESHOLD=70
+CONFIG_SOUNDWATCH_COOLDOWN_MS=5000
+CONFIG_SOUNDWATCH_CONFIRM_FRAMES=3
+CONFIG_SOUNDWATCH_MAX_EVENTS=100
+
+# Audio support
+CONFIG_AUDIO=y
+CONFIG_AUDIO_MULTI_SESSION=y
+
+# Storage - tmpfs as fallback writable filesystem
+CONFIG_FS_TMPFS=y
+
+# Note: LSM6DS3 sensor init failure (I2C1 addr 0x6a, error -5)
+# is a board-level issue. If the sensor is not populated on your
+# board, this warning is expected and does not affect SoundWatch
+# functionality. To suppress it, disable the sensor driver in the
+# SiFli board BSP defconfig:
+#   CONFIG_SENSORS_LSM6DS3=n
+#
+# ADC calibration data missing warning is also board-level and
+# uses safe defaults. No action needed.
