@@ -31,6 +31,7 @@
 #include <errno.h>
 #include <syslog.h>
 #include <sys/ioctl.h>
+#include <pthread.h>
 #include <nuttx/timers/pwm.h>
 
 #include "soundwatch.h"
@@ -40,8 +41,11 @@
  ****************************************************************************/
 
 #define VIBRATION_PWM_CHANNEL    0
-#define VIBRATION_PWM_FREQUENCY  200  /* Hz */
-#define VIBRATION_PWM_DUTY       50   /* Percent */
+#define VIBRATION_PWM_FREQUENCY  200   /* Hz */
+
+/* NuttX ub16_t: 0-65535 represents 0%-100% duty cycle */
+
+#define VIBRATION_PWM_DUTY_50    32768 /* 50% = 32768/65536 */
 
 /* Vibration patterns (milliseconds) */
 
@@ -73,9 +77,15 @@ typedef struct vibration_pattern_s
 
 struct vibration_ctx_s
 {
-  int      fd;         /* PWM device file descriptor */
-  bool     active;     /* Vibration active flag */
-  uint8_t  sound_type; /* Current sound type */
+  int      fd;              /* PWM device file descriptor */
+  bool     active;          /* Vibration active flag */
+  bool     thread_running;  /* Thread running flag */
+  bool     thread_created;  /* Thread created flag */
+  uint8_t  sound_type;      /* Current sound type */
+  pthread_t thread;         /* Vibration thread */
+  pthread_mutex_t mutex;    /* Mutex for thread safety */
+  pthread_cond_t cond;      /* Condition variable for signaling */
+  struct vibration_pattern_s current_pattern; /* Current pattern to execute */
   struct vibration_pattern_s patterns[SOUND_TYPE_MAX];
 };
 
@@ -84,8 +94,6 @@ struct vibration_ctx_s
  ****************************************************************************/
 
 static int vibration_set_pwm(struct vibration_ctx_s *ctx, bool enable);
-static void vibration_task(struct vibration_ctx_s *ctx,
-                           const vibration_pattern_t *pattern);
 
 /****************************************************************************
  * Private Functions
@@ -113,12 +121,16 @@ static int vibration_set_pwm(struct vibration_ctx_s *ctx, bool enable)
 
   DEBUGASSERT(ctx != NULL);
 
+  /* Clear the structure before use */
+
+  memset(&info, 0, sizeof(info));
+
   if (enable)
     {
-      /* Configure PWM */
+      /* Configure PWM - duty is ub16_t format (0-65535 = 0%-100%) */
 
       info.frequency = VIBRATION_PWM_FREQUENCY;
-      info.duty = VIBRATION_PWM_DUTY * 1000 / 100; /* Convert to 0-1000 */
+      info.duty = VIBRATION_PWM_DUTY_50; /* 50% duty cycle */
 
       ret = ioctl(ctx->fd, PWMIOC_SETCHARACTERISTICS, (unsigned long)&info);
       if (ret < 0)
@@ -153,41 +165,81 @@ static int vibration_set_pwm(struct vibration_ctx_s *ctx, bool enable)
 }
 
 /****************************************************************************
- * Name: vibration_task
+ * Name: vibration_thread
  *
  * Description:
- *   Execute a vibration pattern.
+ *   Vibration thread function. Executes vibration patterns in a separate
+ *   thread to avoid blocking the main thread.
  *
  * Input Parameters:
- *   ctx     - Vibration context
- *   pattern - Vibration pattern to execute
+ *   arg - Vibration context pointer
+ *
+ * Returned Value:
+ *   NULL always
  *
  ****************************************************************************/
 
-static void vibration_task(struct vibration_ctx_s *ctx,
-                           const vibration_pattern_t *pattern)
+static void *vibration_thread(void *arg)
 {
+  struct vibration_ctx_s *ctx = (struct vibration_ctx_s *)arg;
+  vibration_pattern_t pattern;
   int i;
 
   DEBUGASSERT(ctx != NULL);
-  DEBUGASSERT(pattern != NULL);
 
+  /* Copy pattern under mutex */
+
+  pthread_mutex_lock(&ctx->mutex);
+  pattern = ctx->current_pattern;
   ctx->active = true;
+  ctx->thread_running = true;
+  pthread_cond_signal(&ctx->cond); /* Signal that thread has started */
+  pthread_mutex_unlock(&ctx->mutex);
 
-  for (i = 0; i < pattern->repeat && ctx->active; i++)
+  for (i = 0; i < pattern.repeat; i++)
     {
-      /* Vibrate on */
+      /* Check if still active under mutex */
+
+      pthread_mutex_lock(&ctx->mutex);
+      if (!ctx->active)
+        {
+          pthread_mutex_unlock(&ctx->mutex);
+          break;
+        }
+
+      /* Keep PWM on while we hold the lock to prevent stop from interfering */
 
       vibration_set_pwm(ctx, true);
-      usleep(pattern->on_time * 1000);
+      pthread_mutex_unlock(&ctx->mutex);
 
-      /* Vibrate off */
+      usleep(pattern.on_time * 1000);
+
+      /* Check again before turning off */
+
+      pthread_mutex_lock(&ctx->mutex);
+      if (!ctx->active)
+        {
+          vibration_set_pwm(ctx, false);
+          pthread_mutex_unlock(&ctx->mutex);
+          break;
+        }
 
       vibration_set_pwm(ctx, false);
-      usleep(pattern->off_time * 1000);
+      pthread_mutex_unlock(&ctx->mutex);
+
+      usleep(pattern.off_time * 1000);
     }
 
+  /* Ensure PWM is stopped */
+
+  pthread_mutex_lock(&ctx->mutex);
+  vibration_set_pwm(ctx, false);
   ctx->active = false;
+  ctx->thread_running = false;
+  pthread_cond_signal(&ctx->cond); /* Signal that thread has finished */
+  pthread_mutex_unlock(&ctx->mutex);
+
+  return NULL;
 }
 
 /****************************************************************************
@@ -237,7 +289,14 @@ int vibration_init(vibration_handle_t *handle)
     }
 
   ctx->active = false;
+  ctx->thread_running = false;
+  ctx->thread_created = false;
   ctx->sound_type = SOUND_TYPE_UNKNOWN;
+
+  /* Initialize mutex and condition variable */
+
+  pthread_mutex_init(&ctx->mutex, NULL);
+  pthread_cond_init(&ctx->cond, NULL);
 
   /* Initialize vibration patterns */
 
@@ -301,10 +360,43 @@ void vibration_deinit(vibration_handle_t handle)
       return;
     }
 
-  /* Stop any active vibration */
+  /* Stop any active vibration and wait for thread to finish */
+
+  pthread_mutex_lock(&ctx->mutex);
+
+  /* Signal the thread to stop */
 
   ctx->active = false;
+
+  /* Wait for thread to finish if it's running */
+
+  while (ctx->thread_running)
+    {
+      pthread_cond_wait(&ctx->cond, &ctx->mutex);
+    }
+
+  /* Wait for thread to finish while still holding the lock */
+
+  if (ctx->thread_created)
+    {
+      pthread_t thread = ctx->thread;
+      ctx->thread_created = false;
+      pthread_mutex_unlock(&ctx->mutex);
+      pthread_join(thread, NULL);
+    }
+  else
+    {
+      pthread_mutex_unlock(&ctx->mutex);
+    }
+
+  /* Ensure PWM is stopped */
+
   vibration_set_pwm(ctx, false);
+
+  /* Destroy synchronization primitives */
+
+  pthread_cond_destroy(&ctx->cond);
+  pthread_mutex_destroy(&ctx->mutex);
 
   close(ctx->fd);
   free(ctx);
@@ -330,6 +422,7 @@ void vibration_deinit(vibration_handle_t handle)
 int vibration_alert(vibration_handle_t handle, uint8_t sound_type)
 {
   struct vibration_ctx_s *ctx = (struct vibration_ctx_s *)handle;
+  int ret;
 
   DEBUGASSERT(ctx != NULL);
 
@@ -338,14 +431,52 @@ int vibration_alert(vibration_handle_t handle, uint8_t sound_type)
       return -EINVAL;
     }
 
-  /* Stop any current vibration */
+  /* Stop any current vibration and wait for thread to finish */
+
+  pthread_mutex_lock(&ctx->mutex);
+
+  /* Signal the thread to stop */
 
   ctx->active = false;
-  usleep(10000); /* 10ms delay */
 
-  /* Execute the vibration pattern */
+  /* Wait for thread to finish if it's running */
 
-  vibration_task(ctx, &ctx->patterns[sound_type]);
+  while (ctx->thread_running)
+    {
+      pthread_cond_wait(&ctx->cond, &ctx->mutex);
+    }
+
+  /* Join the finished thread to release resources */
+
+  if (ctx->thread_created)
+    {
+      pthread_t old_thread = ctx->thread;
+      ctx->thread_created = false;
+      pthread_mutex_unlock(&ctx->mutex);
+      pthread_join(old_thread, NULL);
+      pthread_mutex_lock(&ctx->mutex);
+    }
+
+  /* Copy pattern before starting thread */
+
+  ctx->current_pattern = ctx->patterns[sound_type];
+
+  pthread_mutex_unlock(&ctx->mutex);
+
+  /* Start new thread */
+
+  ret = pthread_create(&ctx->thread, NULL, vibration_thread, ctx);
+  if (ret != 0)
+    {
+      syslog(LOG_ERR, "Vibration: Thread creation failed: %d\n", ret);
+      return -ret;
+    }
+
+  /* Mark thread as created under mutex protection */
+
+  pthread_mutex_lock(&ctx->mutex);
+  ctx->thread_created = true;
+  pthread_mutex_unlock(&ctx->mutex);
 
   return 0;
 }
@@ -370,7 +501,35 @@ int vibration_stop(vibration_handle_t handle)
 
   DEBUGASSERT(ctx != NULL);
 
+  pthread_mutex_lock(&ctx->mutex);
+
+  /* Signal the thread to stop */
+
   ctx->active = false;
+
+  /* Wait for thread to finish if it's running */
+
+  while (ctx->thread_running)
+    {
+      pthread_cond_wait(&ctx->cond, &ctx->mutex);
+    }
+
+  /* Join the finished thread to release resources */
+
+  if (ctx->thread_created)
+    {
+      pthread_t old_thread = ctx->thread;
+      ctx->thread_created = false;
+      pthread_mutex_unlock(&ctx->mutex);
+      pthread_join(old_thread, NULL);
+    }
+  else
+    {
+      pthread_mutex_unlock(&ctx->mutex);
+    }
+
+  /* Ensure PWM is stopped */
+
   vibration_set_pwm(ctx, false);
 
   return 0;

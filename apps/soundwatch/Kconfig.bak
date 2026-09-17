@@ -23,7 +23,6 @@ config APP_SOUNDWATCH
 	depends on LIBC_FLOATINGPOINT
 	depends on PTHREAD_MUTEX_TYPES
 	depends on LV_USE_NUTTX
-	depends on PWM
 	---help---
 		SoundWatch is an environmental sound awareness application for
 		the hearing impaired and users who need to focus on work. It

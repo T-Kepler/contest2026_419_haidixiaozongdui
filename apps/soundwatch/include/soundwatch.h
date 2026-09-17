@@ -50,12 +50,31 @@
 #define ALERT_LEVEL_HIGH          2
 #define ALERT_LEVEL_CRITICAL      3
 
-/* Configuration defaults */
+/* Configuration defaults - use Kconfig values if available */
 
-#define CONFIG_SOUNDWATCH_CONFIDENCE_THRESHOLD   70
-#define CONFIG_SOUNDWATCH_COOLDOWN_MS            5000
-#define CONFIG_SOUNDWATCH_CONFIRM_FRAMES         3
-#define CONFIG_SOUNDWATCH_MAX_EVENTS             100
+#ifdef CONFIG_SOUNDWATCH_CONFIDENCE_THRESHOLD
+#  define SOUNDWATCH_CONFIDENCE_THRESHOLD   CONFIG_SOUNDWATCH_CONFIDENCE_THRESHOLD
+#else
+#  define SOUNDWATCH_CONFIDENCE_THRESHOLD   70
+#endif
+
+#ifdef CONFIG_SOUNDWATCH_COOLDOWN_MS
+#  define SOUNDWATCH_COOLDOWN_MS            CONFIG_SOUNDWATCH_COOLDOWN_MS
+#else
+#  define SOUNDWATCH_COOLDOWN_MS            5000
+#endif
+
+#ifdef CONFIG_SOUNDWATCH_CONFIRM_FRAMES
+#  define SOUNDWATCH_CONFIRM_FRAMES         CONFIG_SOUNDWATCH_CONFIRM_FRAMES
+#else
+#  define SOUNDWATCH_CONFIRM_FRAMES         3
+#endif
+
+#ifdef CONFIG_SOUNDWATCH_MAX_EVENTS
+#  define SOUNDWATCH_MAX_EVENTS             CONFIG_SOUNDWATCH_MAX_EVENTS
+#else
+#  define SOUNDWATCH_MAX_EVENTS             100
+#endif
 
 /* Audio configuration */
 
@@ -155,6 +174,8 @@ void ui_deinit(ui_handle_t handle);
 int ui_show_alert(ui_handle_t handle, const sound_event_t *event);
 int ui_show_unknown(ui_handle_t handle, const sound_event_t *event);
 int ui_update_status(ui_handle_t handle, const char *status);
+int ui_load_history(ui_handle_t handle, const sound_event_t *events,
+                    int count);
 
 /****************************************************************************
  * Public Function Prototypes - Storage Module

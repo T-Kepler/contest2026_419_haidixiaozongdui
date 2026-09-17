@@ -69,10 +69,95 @@ struct bluetooth_ctx_s
 
 static int bluetooth_register_service(struct bluetooth_ctx_s *ctx);
 static int bluetooth_start_advertising(struct bluetooth_ctx_s *ctx);
+static size_t json_escape_string(char *dest, size_t dest_size,
+                                  const char *src);
 
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: json_escape_string
+ *
+ * Description:
+ *   Escape special characters in a string for JSON output.
+ *
+ * Input Parameters:
+ *   dest      - Destination buffer
+ *   dest_size - Size of destination buffer
+ *   src       - Source string to escape
+ *
+ * Returned Value:
+ *   Number of characters written (excluding null terminator)
+ *
+ ****************************************************************************/
+
+static size_t json_escape_string(char *dest, size_t dest_size,
+                                  const char *src)
+{
+  size_t i = 0;
+  size_t j = 0;
+
+  if (dest_size == 0)
+    {
+      return 0;
+    }
+
+  while (src[i] != '\0' && j < dest_size - 1)
+    {
+      switch (src[i])
+        {
+          case '"':
+            if (j + 2 < dest_size)
+              {
+                dest[j++] = '\\';
+                dest[j++] = '"';
+              }
+            break;
+
+          case '\\':
+            if (j + 2 < dest_size)
+              {
+                dest[j++] = '\\';
+                dest[j++] = '\\';
+              }
+            break;
+
+          case '\n':
+            if (j + 2 < dest_size)
+              {
+                dest[j++] = '\\';
+                dest[j++] = 'n';
+              }
+            break;
+
+          case '\r':
+            if (j + 2 < dest_size)
+              {
+                dest[j++] = '\\';
+                dest[j++] = 'r';
+              }
+            break;
+
+          case '\t':
+            if (j + 2 < dest_size)
+              {
+                dest[j++] = '\\';
+                dest[j++] = 't';
+              }
+            break;
+
+          default:
+            dest[j++] = src[i];
+            break;
+        }
+
+      i++;
+    }
+
+  dest[j] = '\0';
+  return j;
+}
 
 /****************************************************************************
  * Name: bluetooth_register_service
@@ -246,7 +331,8 @@ int bluetooth_notify_event(bluetooth_handle_t handle,
                            const sound_event_t *event)
 {
   struct bluetooth_ctx_s *ctx = (struct bluetooth_ctx_s *)handle;
-  char notification[128];
+  char notification[256];
+  char escaped_desc[128];
 
   DEBUGASSERT(ctx != NULL);
   DEBUGASSERT(event != NULL);
@@ -258,12 +344,17 @@ int bluetooth_notify_event(bluetooth_handle_t handle,
       return -ENOTCONN;
     }
 
+  /* Escape description for JSON safety */
+
+  json_escape_string(escaped_desc, sizeof(escaped_desc),
+                     event->description);
+
   /* Prepare notification data */
 
   snprintf(notification, sizeof(notification),
            "{\"type\":%d,\"confidence\":%d,\"alert\":%d,\"desc\":\"%s\"}",
            event->type, event->confidence, event->alert_level,
-           event->description);
+           escaped_desc);
 
   /* Note: In a real implementation, this would send a GATT notification.
    * For now, we just log the notification.
